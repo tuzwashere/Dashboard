@@ -1,0 +1,583 @@
+import { useState, useEffect, useRef } from “react”;
+
+const QUOTES = [
+{ text: “The secret of getting ahead is getting started.”, author: “Mark Twain” },
+{ text: “Don’t watch the clock; do what it does. Keep going.”, author: “Sam Levenson” },
+{ text: “The harder I work, the luckier I get.”, author: “Samuel Goldwyn” },
+{ text: “Opportunities don’t happen. You create them.”, author: “Chris Grosser” },
+{ text: “Build your own dreams, or someone else will hire you to build theirs.”, author: “Farrah Gray” },
+{ text: “Every morning you have two choices: continue to sleep with your dreams or wake up and chase them.”, author: “Unknown” },
+{ text: “Small steps every day lead to big results over time.”, author: “Unknown” },
+{ text: “The way to get started is to quit talking and begin doing.”, author: “Walt Disney” },
+{ text: “Success usually comes to those who are too busy to be looking for it.”, author: “Henry David Thoreau” },
+{ text: “Your time is limited, so don’t waste it living someone else’s life.”, author: “Steve Jobs” },
+];
+
+const BIZ = {
+detail: { label: “Car Detailing”, emoji: “🚗”, color: “#3b82f6”, bg: “rgba(59,130,246,0.12)” },
+junk: { label: “Junk Removal”, emoji: “🗑️”, color: “#f59e0b”, bg: “rgba(245,158,11,0.12)” },
+};
+
+const STATUS = {
+completed: { label: “DONE”, color: “#10b981”, bg: “rgba(16,185,129,0.12)” },
+pending: { label: “PENDING”, color: “#f59e0b”, bg: “rgba(245,158,11,0.12)” },
+scheduled: { label: “SCHED”, color: “#8b5cf6”, bg: “rgba(139,92,246,0.12)” },
+};
+
+const PRIORITY = { high: “#ef4444”, med: “#f59e0b”, low: “#10b981” };
+
+const PLATFORMS = [
+{ name: “Facebook Marketplace”, icon: “👥”, color: “#1877f2”, url: (biz) => `https://www.facebook.com/marketplace/search?q=${biz === "detail" ? "car+detailing" : "junk+removal"}+near+me` },
+{ name: “Instagram”, icon: “📸”, color: “#e1306c”, url: (biz) => `https://www.instagram.com/explore/tags/${biz === "detail" ? "cardetailing" : "junkremoval"}neededneeded` },
+{ name: “Nextdoor”, icon: “🏘️”, color: “#10b981”, url: () => “https://www.nextdoor.com” },
+{ name: “Craigslist”, icon: “📋”, color: “#8b5cf6”, url: (biz) => `https://craigslist.org/search/sss?query=${biz === "detail" ? "car+detailing" : "junk+removal"}` },
+{ name: “Google Local”, icon: “🔍”, color: “#ea4335”, url: (biz) => `https://www.google.com/search?q=${biz === "detail" ? "car+detailing+wanted+near+me" : "junk+removal+needed+near+me"}` },
+];
+
+const INTEGRATIONS = [
+{ icon: “🗺️”, name: “Google Business Profile”, desc: “Manage both listings, respond to reviews”, url: “https://business.google.com”, status: “connected” },
+{ icon: “💬”, name: “Slack”, desc: “Get job alerts and reminders in Slack”, url: “https://slack.com”, status: “connect” },
+{ icon: “📅”, name: “Google Calendar”, desc: “Sync job appointments automatically”, url: “https://calendar.google.com”, status: “open” },
+{ icon: “💳”, name: “Square / Cash App”, desc: “Accept payments from clients”, url: “https://squareup.com”, status: “setup” },
+{ icon: “📸”, name: “Instagram Business”, desc: “Post before/after photos, get DMs from clients”, url: “https://instagram.com”, status: “open” },
+{ icon: “👥”, name: “Facebook Business”, desc: “Marketplace listings & business page”, url: “https://business.facebook.com”, status: “open” },
+];
+
+const now = new Date();
+const h = now.getHours();
+const greeting = h < 12 ? “Good morning ☀️” : h < 17 ? “Good afternoon 🌤️” : “Good evening 🌙”;
+const dateStr = now.toLocaleDateString(“en-US”, { weekday: “long”, year: “numeric”, month: “long”, day: “numeric” });
+const todayStr = now.toISOString().split(“T”)[0];
+
+// Mini bar chart component
+function BarChart({ data, color }) {
+const max = Math.max(…data.map(d => d.val), 1);
+return (
+<div style={{ display: “flex”, alignItems: “flex-end”, gap: 6, height: 80, padding: “0 4px” }}>
+{data.map((d, i) => (
+<div key={i} style={{ flex: 1, display: “flex”, flexDirection: “column”, alignItems: “center”, gap: 4 }}>
+<div style={{ width: “100%”, background: color, borderRadius: 4, opacity: 0.8, height: `${Math.max((d.val / max) * 64, d.val > 0 ? 6 : 2)}px`, transition: “height .3s” }} />
+<div style={{ fontSize: 9, color: “#555” }}>{d.label}</div>
+</div>
+))}
+</div>
+);
+}
+
+// Donut chart component
+function DonutChart({ detail, junk }) {
+const total = detail + junk || 1;
+const dp = (detail / total) * 100;
+const angle = (dp / 100) * 360;
+const r = 40, cx = 50, cy = 50;
+const rad = (a) => (a - 90) * (Math.PI / 180);
+const x1 = cx + r * Math.cos(rad(0)), y1 = cy + r * Math.sin(rad(0));
+const x2 = cx + r * Math.cos(rad(angle)), y2 = cy + r * Math.sin(rad(angle));
+const large = angle > 180 ? 1 : 0;
+return (
+<svg viewBox=“0 0 100 100” style={{ width: 120, height: 120 }}>
+<circle cx={cx} cy={cy} r={r} fill="none" stroke="#f59e0b" strokeWidth={14} />
+{detail > 0 && <path d={`M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`} fill=“none” stroke=”#3b82f6” strokeWidth={14} strokeLinecap=“round” />}
+<text x={cx} y={cy - 4} textAnchor=“middle” fontSize=“10” fill=”#eaeaea” fontWeight=“700”>{Math.round(dp)}%</text>
+<text x={cx} y={cy + 8} textAnchor=“middle” fontSize=“7” fill=”#555”>Detailing</text>
+</svg>
+);
+}
+
+export default function Dashboard() {
+const [page, setPage] = useState(“home”);
+const [jobs, setJobs] = useState([]);
+const [ideas, setIdeas] = useState([]);
+const [goals, setGoals] = useState([]);
+const [leads, setLeads] = useState([]);
+const [quoteIdx, setQuoteIdx] = useState(0);
+const [modal, setModal] = useState(null);
+const [jobFilter, setJobFilter] = useState(“all”);
+const [ideaFilter, setIdeaFilter] = useState(“all”);
+const [finderBiz, setFinderBiz] = useState(“detail”);
+
+// Job form
+const [jClient, setJClient] = useState(””); const [jBiz, setJBiz] = useState(“detail”);
+const [jService, setJService] = useState(””); const [jAmount, setJAmount] = useState(””);
+const [jStatus, setJStatus] = useState(“completed”); const [jDate, setJDate] = useState(todayStr);
+
+// Idea form
+const [iTitle, setITitle] = useState(””); const [iDesc, setIDesc] = useState(””);
+const [iBiz, setIBiz] = useState(“detail”); const [iPriority, setIPriority] = useState(“high”);
+
+// Goal form
+const [gTitle, setGTitle] = useState(””); const [gBiz, setGBiz] = useState(“detail”);
+const [gTarget, setGTarget] = useState(””); const [gCurrent, setGCurrent] = useState(””);
+
+// Lead form
+const [lName, setLName] = useState(””); const [lPlatform, setLPlatform] = useState(“Facebook Marketplace”);
+const [lBiz, setLBiz] = useState(“detail”); const [lNote, setLNote] = useState(””);
+
+const quote = QUOTES[quoteIdx];
+
+const addJob = () => {
+if (!jClient || !jService) return;
+setJobs(p => […p, { id: Date.now(), client: jClient, biz: jBiz, service: jService, amount: parseFloat(jAmount) || 0, status: jStatus, date: jDate }]);
+setJClient(””); setJService(””); setJAmount(””); setModal(null);
+};
+
+const addIdea = () => {
+if (!iTitle) return;
+setIdeas(p => […p, { id: Date.now(), title: iTitle, desc: iDesc, biz: iBiz, priority: iPriority, date: new Date().toLocaleDateString() }]);
+setITitle(””); setIDesc(””); setModal(null);
+};
+
+const addGoal = () => {
+if (!gTitle) return;
+setGoals(p => […p, { id: Date.now(), title: gTitle, biz: gBiz, target: parseFloat(gTarget) || 100, current: parseFloat(gCurrent) || 0 }]);
+setGTitle(””); setGTarget(””); setGCurrent(””); setModal(null);
+};
+
+const addLead = () => {
+if (!lName) return;
+setLeads(p => […p, { id: Date.now(), name: lName, platform: lPlatform, biz: lBiz, note: lNote, date: new Date().toLocaleDateString() }]);
+setLName(””); setLNote(””); setModal(null);
+};
+
+const detailRev = jobs.filter(j => j.biz === “detail”).reduce((s, j) => s + j.amount, 0);
+const junkRev = jobs.filter(j => j.biz === “junk”).reduce((s, j) => s + j.amount, 0);
+const totalRev = detailRev + junkRev;
+const completed = jobs.filter(j => j.status === “completed”);
+const pending = jobs.filter(j => j.status === “pending”);
+const avgJob = completed.length ? (completed.reduce((s, j) => s + j.amount, 0) / completed.length) : 0;
+
+const months = [“Jan”, “Feb”, “Mar”, “Apr”, “May”, “Jun”, “Jul”, “Aug”, “Sep”, “Oct”, “Nov”, “Dec”];
+const last6 = Array.from({ length: 6 }, (_, i) => {
+const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+return { label: months[d.getMonth()], month: d.getMonth(), year: d.getFullYear() };
+}).map(m => ({ label: m.label, val: jobs.filter(j => { const d = new Date(j.date); return d.getMonth() === m.month && d.getFullYear() === m.year; }).length }));
+
+const filteredJobs = jobFilter === “all” ? jobs : jobs.filter(j => j.biz === jobFilter);
+const filteredIdeas = ideaFilter === “all” ? ideas : ideas.filter(i => i.biz === ideaFilter);
+
+const S = {
+page: { fontFamily: “‘Segoe UI’, system-ui, sans-serif”, minHeight: “100vh”, background: “#0a0b0f”, color: “#eaeaea”, display: “flex” },
+sidebar: { width: 210, flexShrink: 0, background: “#12141a”, borderRight: “1px solid #1e2130”, display: “flex”, flexDirection: “column”, padding: “20px 0”, height: “100vh”, position: “sticky”, top: 0 },
+main: { flex: 1, height: “100vh”, overflowY: “auto”, padding: 22 },
+card: { background: “#12141a”, border: “1px solid #1e2130”, borderRadius: 14, padding: 18, marginBottom: 14 },
+input: { width: “100%”, background: “#1a1d26”, border: “1px solid #1e2130”, borderRadius: 8, padding: “9px 12px”, color: “#eaeaea”, fontFamily: “inherit”, fontSize: 13, outline: “none”, marginBottom: 9, display: “block” },
+select: { width: “100%”, background: “#1a1d26”, border: “1px solid #1e2130”, borderRadius: 8, padding: “9px 12px”, color: “#eaeaea”, fontFamily: “inherit”, fontSize: 13, outline: “none”, marginBottom: 9, display: “block” },
+btn: (bg, color) => ({ padding: “9px 18px”, background: bg, border: “none”, borderRadius: 8, color, fontFamily: “inherit”, fontSize: 13, fontWeight: 700, cursor: “pointer” }),
+navItem: (active) => ({ display: “flex”, alignItems: “center”, gap: 9, padding: “9px 10px”, borderRadius: 8, cursor: “pointer”, fontSize: 13, color: active ? “#eaeaea” : “#666”, fontWeight: active ? 700 : 400, background: active ? “#1a1d26” : “none”, border: “none”, width: “100%”, textAlign: “left”, fontFamily: “inherit”, marginBottom: 2 }),
+tag: (color, bg) => ({ display: “inline-block”, fontSize: 10, padding: “2px 8px”, borderRadius: 10, fontWeight: 700, color, background: bg, letterSpacing: 0.5 }),
+grid: (cols) => ({ display: “grid”, gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 12, marginBottom: 14 }),
+};
+
+const NavItem = ({ icon, label, id, dot }) => (
+<button style={S.navItem(page === id)} onClick={() => setPage(id)}>
+<span style={{ width: 18, textAlign: “center” }}>{icon}</span>
+{label}
+{dot && <span style={{ width: 6, height: 6, background: “#ef4444”, borderRadius: “50%”, marginLeft: “auto” }} />}
+</button>
+);
+
+const StatCard = ({ label, value, sub, color }) => (
+<div style={S.card}>
+<div style={{ fontSize: 10, letterSpacing: 2, textTransform: “uppercase”, color: “#555”, marginBottom: 8 }}>{label}</div>
+<div style={{ fontSize: 26, fontWeight: 900, letterSpacing: -1, color: color || “#eaeaea”, marginBottom: 4 }}>{value}</div>
+<div style={{ fontSize: 11, color: “#555” }}>{sub}</div>
+</div>
+);
+
+const JobRow = ({ job }) => {
+const st = STATUS[job.status]; const bz = BIZ[job.biz];
+return (
+<div style={{ display: “flex”, alignItems: “center”, gap: 10, padding: “10px 0”, borderBottom: “1px solid #1a1d26” }}>
+<div style={{ width: 34, height: 34, borderRadius: 8, background: bz.bg, display: “flex”, alignItems: “center”, justifyContent: “center”, fontSize: 16, flexShrink: 0 }}>{bz.emoji}</div>
+<div style={{ flex: 1 }}>
+<div style={{ fontSize: 13, fontWeight: 600 }}>{job.client}</div>
+<div style={{ fontSize: 11, color: “#555” }}>{job.service} · {job.date}</div>
+</div>
+<span style={S.tag(st.color, st.bg)}>{st.label}</span>
+<div style={{ fontSize: 14, fontWeight: 800, color: “#10b981” }}>${job.amount.toFixed(2)}</div>
+</div>
+);
+};
+
+return (
+<div style={S.page}>
+{/* SIDEBAR */}
+<div style={S.sidebar}>
+<div style={{ padding: “0 18px 18px”, borderBottom: “1px solid #1e2130”, marginBottom: 14 }}>
+<div style={{ fontSize: 17, fontWeight: 900, letterSpacing: -0.5 }}>⚡ HustleOS</div>
+<div style={{ fontSize: 9, letterSpacing: 3, color: “#555”, textTransform: “uppercase”, marginTop: 2 }}>Command Center</div>
+</div>
+<div style={{ padding: “0 10px”, flex: 1 }}>
+<div style={{ fontSize: 9, letterSpacing: 2, color: “#444”, textTransform: “uppercase”, padding: “0 8px”, marginBottom: 6 }}>Overview</div>
+<NavItem icon="🏠" label="Dashboard" id="home" />
+<NavItem icon="📊" label="Analytics" id="analytics" />
+<div style={{ fontSize: 9, letterSpacing: 2, color: “#444”, textTransform: “uppercase”, padding: “8px 8px 4px” }}>Business</div>
+<NavItem icon="💼" label="Jobs & Clients" id="jobs" />
+<NavItem icon="🔍" label="Client Finder" id="finder" dot />
+<NavItem icon="💡" label="Ideas Board" id="ideas" />
+<NavItem icon="🎯" label="Goals" id="goals" />
+<div style={{ fontSize: 9, letterSpacing: 2, color: “#444”, textTransform: “uppercase”, padding: “8px 8px 4px” }}>Tools</div>
+<NavItem icon="🔗" label="Integrations" id="integrations" />
+<NavItem icon="✨" label="Daily Quotes" id="quotes" />
+</div>
+<div style={{ margin: “0 10px 8px”, background: “#1a1d26”, border: “1px solid #1e2130”, borderRadius: 10, padding: 10 }}>
+<div style={{ fontSize: 9, letterSpacing: 2, color: “#444”, textTransform: “uppercase”, marginBottom: 8 }}>Businesses</div>
+{Object.entries(BIZ).map(([k, v]) => (
+<div key={k} style={{ padding: “6px 9px”, borderRadius: 7, background: v.bg, color: v.color, fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{v.emoji} {v.label}</div>
+))}
+</div>
+</div>
+
+```
+  {/* MAIN */}
+  <div style={S.main}>
+
+    {/* HOME */}
+    {page === "home" && (
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5 }}>{greeting}</h1>
+            <p style={{ fontSize: 12, color: "#555", marginTop: 3 }}>{dateStr}</p>
+          </div>
+          <button style={S.btn("#3b82f6", "#fff")} onClick={() => setModal("job")}>+ Add Job</button>
+        </div>
+
+        <div style={S.grid(4)}>
+          <StatCard label="Total Revenue" value={`$${totalRev.toFixed(0)}`} sub="All time" color="#10b981" />
+          <StatCard label="Jobs Done" value={completed.length} sub={`${pending.length} pending`} />
+          <StatCard label="Avg Per Job" value={`$${avgJob.toFixed(0)}`} sub="Completed jobs" color="#3b82f6" />
+          <StatCard label="Ideas Logged" value={ideas.length} sub="On the board" color="#8b5cf6" />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12, marginBottom: 14 }}>
+          <div style={S.card}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#555" }}>Recent Jobs</div>
+              <button style={{ ...S.btn("#1a1d26", "#888"), padding: "5px 12px", fontSize: 11 }} onClick={() => setModal("job")}>+ Add</button>
+            </div>
+            {jobs.length === 0
+              ? <div style={{ textAlign: "center", padding: 24, color: "#444" }}>🚗 No jobs yet. Add your first!</div>
+              : [...jobs].reverse().slice(0, 4).map(j => <JobRow key={j.id} job={j} />)
+            }
+          </div>
+          <div style={S.card}>
+            <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#555", marginBottom: 14 }}>Business Split</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16 }}>
+              <DonutChart detail={detailRev} junk={junkRev} />
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: "#3b82f6", display: "inline-block" }} /><span style={{ fontSize: 12 }}>Detailing <strong style={{ color: "#3b82f6" }}>${detailRev.toFixed(0)}</strong></span></div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: "#f59e0b", display: "inline-block" }} /><span style={{ fontSize: 12 }}>Junk Removal <strong style={{ color: "#f59e0b" }}>${junkRev.toFixed(0)}</strong></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={S.card}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#555" }}>💡 Top Ideas</div>
+              <button style={{ ...S.btn("#1a1d26", "#888"), padding: "5px 12px", fontSize: 11 }} onClick={() => setPage("ideas")}>See all</button>
+            </div>
+            {ideas.length === 0
+              ? <div style={{ textAlign: "center", padding: 20, color: "#444" }}>💡 No ideas yet</div>
+              : [...ideas].reverse().slice(0, 3).map(idea => (
+                <div key={idea.id} style={{ background: "#1a1d26", borderRadius: 9, padding: 10, marginBottom: 7, borderLeft: `3px solid ${PRIORITY[idea.priority]}` }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{idea.title}</div>
+                  <div style={{ fontSize: 11, color: "#555" }}>{BIZ[idea.biz]?.emoji || "🌐"} {BIZ[idea.biz]?.label || "General"}</div>
+                </div>
+              ))
+            }
+          </div>
+          <div style={S.card}>
+            <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#555", marginBottom: 12 }}>✨ Daily Quote</div>
+            <div style={{ background: "linear-gradient(135deg,#0f1a2e,#0a1520)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 10, padding: 16, marginBottom: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#c8d8f0", lineHeight: 1.6, marginBottom: 8 }}>"{quote.text}"</div>
+              <div style={{ fontSize: 10, color: "#3b6a9a", letterSpacing: 2, textTransform: "uppercase" }}>— {quote.author}</div>
+            </div>
+            <button style={{ ...S.btn("#1a1d26", "#888"), width: "100%", fontSize: 12 }} onClick={() => setQuoteIdx((quoteIdx + 1) % QUOTES.length)}>🎲 Next Quote</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ANALYTICS */}
+    {page === "analytics" && (
+      <div>
+        <h1 style={{ fontSize: 22, fontWeight: 900, marginBottom: 20 }}>📊 Analytics</h1>
+        <div style={S.grid(4)}>
+          <StatCard label="Total Earned" value={`$${totalRev.toFixed(0)}`} sub="All time" color="#10b981" />
+          <StatCard label="Detailing" value={`$${detailRev.toFixed(0)}`} sub="Car Detailing revenue" color="#3b82f6" />
+          <StatCard label="Junk Removal" value={`$${junkRev.toFixed(0)}`} sub="Junk Removal revenue" color="#f59e0b" />
+          <StatCard label="Total Jobs" value={jobs.length} sub="Across both businesses" />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={S.card}>
+            <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#555", marginBottom: 14 }}>Revenue Split</div>
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 24, padding: "10px 0" }}>
+              <DonutChart detail={detailRev} junk={junkRev} />
+              <div>
+                <div style={{ fontSize: 13, marginBottom: 10 }}>🚗 <strong style={{ color: "#3b82f6" }}>${detailRev.toFixed(0)}</strong> Detailing</div>
+                <div style={{ fontSize: 13 }}>🗑️ <strong style={{ color: "#f59e0b" }}>${junkRev.toFixed(0)}</strong> Junk Removal</div>
+              </div>
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#555", marginBottom: 14 }}>Jobs Per Month</div>
+            <BarChart data={last6} color="#3b82f6" />
+          </div>
+        </div>
+        {jobs.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "#444" }}>📊 Add some jobs to see analytics!</div>}
+      </div>
+    )}
+
+    {/* JOBS */}
+    {page === "jobs" && (
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 900 }}>💼 Jobs & Clients</h1>
+          <button style={S.btn("#3b82f6", "#fff")} onClick={() => setModal("job")}>+ Add Job</button>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {["all", "detail", "junk"].map(f => (
+            <button key={f} style={{ ...S.btn(jobFilter === f ? "#1a1d26" : "transparent", jobFilter === f ? "#eaeaea" : "#555"), border: `1px solid ${jobFilter === f ? "#333" : "#1e2130"}`, fontSize: 12 }} onClick={() => setJobFilter(f)}>
+              {f === "all" ? "All Jobs" : f === "detail" ? "🚗 Detailing" : "🗑️ Junk Removal"}
+            </button>
+          ))}
+        </div>
+        <div style={S.card}>
+          {filteredJobs.length === 0
+            ? <div style={{ textAlign: "center", padding: 40, color: "#444" }}>💼 No jobs yet. Hit "+ Add Job"!</div>
+            : [...filteredJobs].reverse().map(j => <JobRow key={j.id} job={j} />)
+          }
+        </div>
+      </div>
+    )}
+
+    {/* CLIENT FINDER */}
+    {page === "finder" && (
+      <div>
+        <h1 style={{ fontSize: 22, fontWeight: 900, marginBottom: 6 }}>🔍 Client Finder</h1>
+        <p style={{ fontSize: 12, color: "#555", marginBottom: 18 }}>Find people looking for your services on social platforms</p>
+
+        <div style={S.card}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <select style={{ ...S.select, margin: 0, flex: 1 }} value={finderBiz} onChange={e => setFinderBiz(e.target.value)}>
+              <option value="detail">🚗 Car Detailing</option>
+              <option value="junk">🗑️ Junk Removal</option>
+            </select>
+          </div>
+          <div style={{ fontSize: 11, color: "#555", lineHeight: 1.6 }}>💡 Click any platform below to search for people asking for your service right now.</div>
+        </div>
+
+        <div style={S.grid(3)}>
+          {PLATFORMS.map(p => (
+            <a key={p.name} href={p.url(finderBiz)} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+              <div style={{ ...S.card, cursor: "pointer", marginBottom: 0, transition: "border-color .15s" }}
+                onMouseOver={e => e.currentTarget.style.borderColor = p.color}
+                onMouseOut={e => e.currentTarget.style.borderColor = "#1e2130"}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>{p.icon}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 3 }}>{p.name}</div>
+                <div style={{ fontSize: 11, color: "#555" }}>Search {finderBiz === "detail" ? "car detailing" : "junk removal"} →</div>
+              </div>
+            </a>
+          ))}
+        </div>
+
+        <div style={{ ...S.card, marginTop: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#555" }}>Saved Leads</div>
+            <button style={{ ...S.btn("#1a1d26", "#888"), padding: "5px 12px", fontSize: 11 }} onClick={() => setModal("lead")}>+ Log Lead</button>
+          </div>
+          {leads.length === 0
+            ? <div style={{ textAlign: "center", padding: 28, color: "#444" }}>🔍 No leads logged yet</div>
+            : [...leads].reverse().map(l => (
+              <div key={l.id} style={{ display: "flex", gap: 10, padding: "10px 0", borderBottom: "1px solid #1a1d26", alignItems: "flex-start" }}>
+                <div style={{ width: 36, height: 36, borderRadius: 8, background: "#1a1d26", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
+                  {PLATFORMS.find(p => l.platform.includes(p.name.split(" ")[0]))?.icon || "📣"}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{l.name}</div>
+                  <div style={{ fontSize: 11, color: "#555" }}>{l.platform} · {BIZ[l.biz]?.emoji} {BIZ[l.biz]?.label} · {l.date}</div>
+                  {l.note && <div style={{ fontSize: 11, color: "#666", fontStyle: "italic", marginTop: 2 }}>"{l.note}"</div>}
+                </div>
+                <button style={{ ...S.btn("rgba(239,68,68,0.1)", "#ef4444"), padding: "4px 10px", fontSize: 11 }} onClick={() => setLeads(leads.filter(x => x.id !== l.id))}>✕</button>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    )}
+
+    {/* IDEAS */}
+    {page === "ideas" && (
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 900 }}>💡 Ideas Board</h1>
+          <button style={S.btn("#8b5cf6", "#fff")} onClick={() => setModal("idea")}>+ New Idea</button>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {["all", "detail", "junk", "general"].map(f => (
+            <button key={f} style={{ ...S.btn(ideaFilter === f ? "#1a1d26" : "transparent", ideaFilter === f ? "#eaeaea" : "#555"), border: `1px solid ${ideaFilter === f ? "#333" : "#1e2130"}`, fontSize: 12 }} onClick={() => setIdeaFilter(f)}>
+              {f === "all" ? "All" : f === "detail" ? "🚗 Detailing" : f === "junk" ? "🗑️ Junk Removal" : "🌐 General"}
+            </button>
+          ))}
+        </div>
+        {filteredIdeas.length === 0
+          ? <div style={{ textAlign: "center", padding: 48, color: "#444" }}>💡 No ideas yet. Start capturing!</div>
+          : <div style={S.grid(2)}>{[...filteredIdeas].reverse().map(idea => (
+            <div key={idea.id} style={{ ...S.card, marginBottom: 0, borderLeft: `3px solid ${PRIORITY[idea.priority]}`, position: "relative" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                <span style={S.tag(BIZ[idea.biz]?.color || "#8b5cf6", BIZ[idea.biz]?.bg || "rgba(139,92,246,0.12)")}>{BIZ[idea.biz]?.emoji || "🌐"} {BIZ[idea.biz]?.label || "General"}</span>
+                <button style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 12 }} onClick={() => setIdeas(ideas.filter(i => i.id !== idea.id))}>✕</button>
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{idea.title}</div>
+              {idea.desc && <div style={{ fontSize: 12, color: "#666", lineHeight: 1.5 }}>{idea.desc}</div>}
+              <div style={{ fontSize: 10, color: "#444", marginTop: 8 }}>{idea.date}</div>
+            </div>
+          ))}</div>
+        }
+      </div>
+    )}
+
+    {/* GOALS */}
+    {page === "goals" && (
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 900 }}>🎯 Goals</h1>
+          <button style={S.btn("#10b981", "#fff")} onClick={() => setModal("goal")}>+ Add Goal</button>
+        </div>
+        {goals.length === 0
+          ? <div style={{ textAlign: "center", padding: 48, color: "#444" }}>🎯 No goals set yet!</div>
+          : goals.map(g => {
+            const pct = Math.min(Math.round((g.current / g.target) * 100), 100);
+            const bz = BIZ[g.biz] || { emoji: "💼", label: "Both", color: "#8b5cf6" };
+            return (
+              <div key={g.id} style={S.card}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{bz.emoji} {g.title}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 18, fontWeight: 900, color: bz.color }}>{pct}%</span>
+                    <button style={{ background: "none", border: "none", color: "#444", cursor: "pointer" }} onClick={() => setGoals(goals.filter(x => x.id !== g.id))}>✕</button>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>{g.current} / {g.target}</div>
+                <div style={{ height: 8, background: "#1a1d26", borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${pct}%`, background: bz.color, borderRadius: 99, transition: "width .3s" }} />
+                </div>
+              </div>
+            );
+          })
+        }
+      </div>
+    )}
+
+    {/* INTEGRATIONS */}
+    {page === "integrations" && (
+      <div>
+        <h1 style={{ fontSize: 22, fontWeight: 900, marginBottom: 20 }}>🔗 Integrations</h1>
+        <div style={S.card}>
+          {INTEGRATIONS.map((int, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: i < INTEGRATIONS.length - 1 ? "1px solid #1a1d26" : "none" }}>
+              <div style={{ width: 38, height: 38, borderRadius: 9, background: "#1a1d26", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{int.icon}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{int.name}</div>
+                <div style={{ fontSize: 11, color: "#555" }}>{int.desc}</div>
+              </div>
+              <a href={int.url} target="_blank" rel="noreferrer">
+                <button style={{ ...S.btn(int.status === "connected" ? "rgba(16,185,129,0.12)" : "#1a1d26", int.status === "connected" ? "#10b981" : "#888"), fontSize: 12, padding: "6px 14px" }}>
+                  {int.status === "connected" ? "✅ Open" : int.status === "connect" ? "Connect →" : "Open →"}
+                </button>
+              </a>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {/* QUOTES */}
+    {page === "quotes" && (
+      <div>
+        <h1 style={{ fontSize: 22, fontWeight: 900, marginBottom: 20 }}>✨ Daily Quotes</h1>
+        <div style={{ maxWidth: 500, margin: "0 auto" }}>
+          <div style={{ background: "linear-gradient(135deg,#0f1a2e,#0a1520)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 16, padding: 32, textAlign: "center", marginBottom: 14 }}>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>💬</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#c8d8f0", lineHeight: 1.7, marginBottom: 12 }}>"{quote.text}"</div>
+            <div style={{ fontSize: 11, color: "#3b6a9a", letterSpacing: 2, textTransform: "uppercase" }}>— {quote.author}</div>
+          </div>
+          <button style={{ ...S.btn("#1a1d26", "#888"), width: "100%", fontSize: 13 }} onClick={() => setQuoteIdx((quoteIdx + 1) % QUOTES.length)}>🎲 Next Quote</button>
+          <div style={{ marginTop: 20 }}>
+            {QUOTES.map((q, i) => (
+              <div key={i} style={{ ...S.card, marginBottom: 8, opacity: i === quoteIdx ? 1 : 0.5, cursor: "pointer" }} onClick={() => setQuoteIdx(i)}>
+                <div style={{ fontSize: 13, color: "#c8d8f0", fontStyle: "italic", marginBottom: 4 }}>"{q.text}"</div>
+                <div style={{ fontSize: 11, color: "#555" }}>— {q.author}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+
+  {/* MODALS */}
+  {modal && (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setModal(null)}>
+      <div style={{ background: "#12141a", border: "1px solid #1e2130", borderRadius: 16, padding: 24, width: "90%", maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+
+        {modal === "job" && <>
+          <h3 style={{ fontSize: 18, fontWeight: 900, marginBottom: 16 }}>Log a Job</h3>
+          <input style={S.input} placeholder="Client name" value={jClient} onChange={e => setJClient(e.target.value)} />
+          <select style={S.select} value={jBiz} onChange={e => setJBiz(e.target.value)}><option value="detail">🚗 Car Detailing</option><option value="junk">🗑️ Junk Removal</option></select>
+          <input style={S.input} placeholder="Service (e.g. Full Detail, Haul Away)" value={jService} onChange={e => setJService(e.target.value)} />
+          <input style={S.input} type="number" placeholder="Amount earned ($)" value={jAmount} onChange={e => setJAmount(e.target.value)} />
+          <select style={S.select} value={jStatus} onChange={e => setJStatus(e.target.value)}><option value="completed">✅ Completed</option><option value="pending">⏳ Pending</option><option value="scheduled">📅 Scheduled</option></select>
+          <input style={S.input} type="date" value={jDate} onChange={e => setJDate(e.target.value)} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={{ ...S.btn("#3b82f6", "#fff"), flex: 1 }} onClick={addJob}>Save Job</button>
+            <button style={S.btn("#1a1d26", "#888")} onClick={() => setModal(null)}>Cancel</button>
+          </div>
+        </>}
+
+        {modal === "idea" && <>
+          <h3 style={{ fontSize: 18, fontWeight: 900, marginBottom: 16 }}>💡 New Idea</h3>
+          <input style={S.input} placeholder="Idea title" value={iTitle} onChange={e => setITitle(e.target.value)} />
+          <textarea style={{ ...S.input, height: 70, resize: "none" }} placeholder="Describe your idea..." value={iDesc} onChange={e => setIDesc(e.target.value)} />
+          <select style={S.select} value={iBiz} onChange={e => setIBiz(e.target.value)}><option value="detail">🚗 Car Detailing</option><option value="junk">🗑️ Junk Removal</option><option value="general">🌐 General</option></select>
+          <select style={S.select} value={iPriority} onChange={e => setIPriority(e.target.value)}><option value="high">🔴 High Priority</option><option value="med">🟡 Medium</option><option value="low">🟢 Low Priority</option></select>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={{ ...S.btn("#8b5cf6", "#fff"), flex: 1 }} onClick={addIdea}>Save Idea</button>
+            <button style={S.btn("#1a1d26", "#888")} onClick={() => setModal(null)}>Cancel</button>
+          </div>
+        </>}
+
+        {modal === "goal" && <>
+          <h3 style={{ fontSize: 18, fontWeight: 900, marginBottom: 16 }}>🎯 Set a Goal</h3>
+          <input style={S.input} placeholder="Goal (e.g. Earn $1000 this month)" value={gTitle} onChange={e => setGTitle(e.target.value)} />
+          <select style={S.select} value={gBiz} onChange={e => setGBiz(e.target.value)}><option value="detail">🚗 Car Detailing</option><option value="junk">🗑️ Junk Removal</option><option value="both">💼 Both</option></select>
+          <input style={S.input} type="number" placeholder="Target (e.g. 1000)" value={gTarget} onChange={e => setGTarget(e.target.value)} />
+          <input style={S.input} type="number" placeholder="Current progress" value={gCurrent} onChange={e => setGCurrent(e.target.value)} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={{ ...S.btn("#10b981", "#fff"), flex: 1 }} onClick={addGoal}>Save Goal</button>
+            <button style={S.btn("#1a1d26", "#888")} onClick={() => setModal(null)}>Cancel</button>
+          </div>
+        </>}
+
+        {modal === "lead" && <>
+          <h3 style={{ fontSize: 18, fontWeight: 900, marginBottom: 16 }}>🔍 Log a Lead</h3>
+          <input style={S.input} placeholder="Lead name or handle" value={lName} onChange={e => setLName(e.target.value)} />
+          <select style={S.select} value={lPlatform} onChange={e => setLPlatform(e.target.value)}><option>Facebook Marketplace</option><option>Instagram</option><option>Nextdoor</option><option>Craigslist</option><option>Word of Mouth</option></select>
+          <select style={S.select} value={lBiz} onChange={e => setLBiz(e.target.value)}><option value="detail">🚗 Car Detailing</option><option value="junk">🗑️ Junk Removal</option></select>
+          <input style={S.input} placeholder="Note (e.g. wants full detail, 2 cars)" value={lNote} onChange={e => setLNote(e.target.value)} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={{ ...S.btn("#3b82f6", "#fff"), flex: 1 }} onClick={addLead}>Save Lead</button>
+            <button style={S.btn("#1a1d26", "#888")} onClick={() => setModal(null)}>Cancel</button>
+          </div>
+        </>}
+      </div>
+    </div>
+  )}
+</div>
+```
+
+);
+}
